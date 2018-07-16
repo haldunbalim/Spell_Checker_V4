@@ -273,12 +273,10 @@ def generate_model():
 
 
 
-def network(x):
-
-
 
 if __name__ == '__main__':
     ON_EPOCH_END_CALLBACK = OnEpochEndCallback()
     indexer = spell_index()
     ds = dataset()
+    print('hello')
     train_speller(LOAD_MODEL_FILE_NAME)
