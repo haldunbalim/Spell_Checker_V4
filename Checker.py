@@ -1,7 +1,7 @@
 from speller import spell
 from random import shuffle
 import numpy as np
-
+import os
 
 from keras.models import Sequential, load_model
 from keras.layers import Activation, TimeDistributed, Dense, RepeatVector, Dropout, recurrent, Embedding
@@ -10,7 +10,7 @@ from keras import  optimizers
 
 FILE_FOLDER_NAME = "text files/"
 SPELL_INDEX_FILE = FILE_FOLDER_NAME+"spell_index.txt"
-WORDS_FILE = FILE_FOLDER_NAME+"full_short.txt"
+WORDS_FILE = FILE_FOLDER_NAME+"frequent_20k.txt"
 MAXIMUM_LEN = 10
 LEARNING_RATE=0.001
 
@@ -26,10 +26,12 @@ BATCH_SIZE = 128
 NUM_EPOCHS = 1000
 STEPS_PER_EPOCH = 100
 SAVED_MODEL_FILE_NAME="models/keras_spell_e{}.h5"
-LOAD_MODEL_FILE_NAME="models/keras_spell_e7.h5"
 NUM_SAMPLES_ON_CALLBACK=5
 NUM_INPUT_LAYERS=1
 NUM_OUTPUT_LAYERS=1
+LAST_MILESTONE=0
+
+
 
 def shuffle_word(word):
     r= np.random.randint(len(word)-1)
@@ -179,8 +181,11 @@ class OnEpochEndCallback(Callback):
     def on_epoch_end(self, epoch, logs=None):
         """On Epoch end - do some stats"""
         print_random_predictions(self.model)
+        try:
+            os.remove(SAVED_MODEL_FILE_NAME.format(epoch-1))
+        except:
+            pass
         self.model.save(SAVED_MODEL_FILE_NAME.format(epoch))
-
 
 
 
@@ -202,20 +207,22 @@ class dataset:
     def fill_data(self):
         with open(WORDS_FILE) as file:
             for line in file.readlines():
-                word = line.split()[0]
+                word,_ = line.split()
                 self.data.append((typo_generator(word, random_rate=RANDOM_RATE, times=RANDOM_TIMES), word))
+
         shuffle(self.data)
 
     def fill_data_vectors(self):
-        long_ls=[]
+        #long_ls=[]
 
         for ind, el in enumerate(self.data):
             vec_x = vectorize(el[0])
             vec_y = vectorize(el[1])
-            if vec_x.any() != 0 or vec_y.any() != 0:
-                self.data_vectors.append((vec_x, vec_y))
-            else:
-                long_ls.append(ind)
+            self.data_vectors.append((vec_x, vec_y))
+            #if vec_x.any() != 0 or vec_y.any() != 0:
+                #self.data_vectors.append((vec_x, vec_y))
+            #else:
+                #long_ls.append(ind)
 
     def next_batch(self, batch_size):
         if self.current + batch_size >= self.num_samples:
@@ -226,8 +233,6 @@ class dataset:
 
     def reset(self):
         self.current = 0
-        self.fill_data()
-        self.fill_data_vectors()
 
     def generator(self):
         while True:
@@ -257,7 +262,6 @@ def generate_model():
     model = Sequential()
 
 
-
     for i in range(NUM_INPUT_LAYERS):
         model.add(recurrent.GRU(HIDDEN_SIZE, input_shape=(None, indexer.num_spells),
                                 kernel_initializer = INITIALIZATION, return_sequences=i+1<NUM_INPUT_LAYERS))
@@ -269,6 +273,7 @@ def generate_model():
         model.add(recurrent.GRU(HIDDEN_SIZE,return_sequences=True,kernel_initializer=INITIALIZATION))
         model.add(Dropout(AMOUNT_OF_DROPOUT))
 
+    #model.add(Activation('relu'))
     model.add(TimeDistributed(Dense(indexer.num_spells, kernel_initializer=INITIALIZATION)))
     model.add(Activation('softmax'))
 
@@ -282,7 +287,7 @@ def iterative_train(model):
     model.fit_generator(ds.generator(), steps_per_epoch=STEPS_PER_EPOCH,
                         epochs=NUM_EPOCHS,
                         verbose=1,
-                        callbacks=[ON_EPOCH_END_CALLBACK, ],
+                        callbacks=[ON_EPOCH_END_CALLBACK],
                         class_weight=None, max_q_size=10, workers=1,
                         pickle_safe=False, initial_epoch=0)
 
@@ -300,4 +305,4 @@ if __name__ == '__main__':
     ON_EPOCH_END_CALLBACK = OnEpochEndCallback()
     indexer = spell_index()
     ds = dataset()
-    train_speller(LOAD_MODEL_FILE_NAME)
+    train_speller('models/keras_spell_init.h5')
