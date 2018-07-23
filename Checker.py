@@ -20,16 +20,15 @@ RANDOM_TIMES = 2
 AMOUNT_OF_DROPOUT = 0.2
 INITIALIZATION = "he_normal"
 HIDDEN_SIZE = 256
-NUM_ITERATIONS = 1
 
 BATCH_SIZE = 128
 NUM_EPOCHS = 1000
 STEPS_PER_EPOCH = 100
 SAVED_MODEL_FILE_NAME="models/keras_spell_e{}.h5"
+INIT_MODEL_FILE_NAME="models/keras_spell_init.h5"
 NUM_SAMPLES_ON_CALLBACK=5
-NUM_INPUT_LAYERS=1
-NUM_OUTPUT_LAYERS=1
-LAST_MILESTONE=0
+NUM_INPUT_LAYERS=2
+NUM_OUTPUT_LAYERS=2
 
 
 
@@ -125,26 +124,26 @@ def _vectorize(word,padding=False):
 def vectorize(word):
     vec=_vectorize(word)
     result=np.zeros([MAXIMUM_LEN,indexer.num_spells])
+    cursor=0
     if len(vec) <= MAXIMUM_LEN:
         for ind,el in enumerate(vec):
             result[ind][el]=1
+            cursor+=1
+        while cursor < MAXIMUM_LEN:
+            result[cursor][indexer.get_index('END')]=1
+            cursor+=1
         return result
     else:
         return result
 
 
-def devectorize(vector, one_hot=False,padding=False):
-    if one_hot:
-        1+1
-    if padding:
-        1+1
-
+def devectorize(vector):
     st=""
 
     for i in range(MAXIMUM_LEN):
         current = np.argmax(vector[i, :])
 
-        if current==0:
+        if current==indexer.get_index('END'):
             return st
 
         try:
@@ -201,8 +200,9 @@ class dataset:
         print("Data is vectorized")
 
         self.num_samples = len(self.data)
-        self.current = 0
         print("Dataset is created")
+
+
 
     def fill_data(self):
         with open(WORDS_FILE) as file:
@@ -213,30 +213,25 @@ class dataset:
         shuffle(self.data)
 
     def fill_data_vectors(self):
-        #long_ls=[]
+        long_ls=[]
 
         for ind, el in enumerate(self.data):
             vec_x = vectorize(el[0])
             vec_y = vectorize(el[1])
-            self.data_vectors.append((vec_x, vec_y))
-            #if vec_x.any() != 0 or vec_y.any() != 0:
-                #self.data_vectors.append((vec_x, vec_y))
-            #else:
-                #long_ls.append(ind)
+            if vec_x.any() != 0 and vec_y.any() != 0:
+                self.data_vectors.append((vec_x, vec_y))
+            else:
+                long_ls.append(ind)
 
-    def next_batch(self, batch_size):
-        if self.current + batch_size >= self.num_samples:
-            self.reset()
-        self.current += batch_size
-        ls = self.data_vectors[self.current - batch_size:self.current]
-        return np.array([el[0] for el in ls]), np.array([el[1] for el in ls])
+        for el in reversed(long_ls):
+            self.data_vectors.pop(el)
+            self.data.pop(el)
 
-    def reset(self):
-        self.current = 0
-
-    def generator(self):
+    def generator(self,batch_size):
         while True:
-            yield self.next_batch(BATCH_SIZE)
+            r = np.random.randint(0, self.num_samples - batch_size)
+            ls = self.data_vectors[r:r + batch_size]
+            yield np.array([el[0] for el in ls]), np.array([el[1] for el in ls])
 
     def random_sample(self):
         ind = np.random.randint(0, len(self.data))
@@ -244,18 +239,6 @@ class dataset:
         b=self.data[ind][1]
         c=self.data_vectors[ind]
         return a, b, c
-
-
-
-
-def iterate_training(model, X_train, y_train):
-    """Iterative Training"""
-    # Train the model each generation and show predictions against the validation dataset
-    for iteration in range(0, NUM_ITERATIONS):
-        print()
-        print('-' * 50)
-        print('Iteration', iteration)
-        model.fit(X_train, y_train, batch_size=BATCH_SIZE, epochs=NUM_EPOCHS)
 
 
 def generate_model():
@@ -273,7 +256,6 @@ def generate_model():
         model.add(recurrent.GRU(HIDDEN_SIZE,return_sequences=True,kernel_initializer=INITIALIZATION))
         model.add(Dropout(AMOUNT_OF_DROPOUT))
 
-    #model.add(Activation('relu'))
     model.add(TimeDistributed(Dense(indexer.num_spells, kernel_initializer=INITIALIZATION)))
     model.add(Activation('softmax'))
 
@@ -284,7 +266,7 @@ def generate_model():
 
 
 def iterative_train(model):
-    model.fit_generator(ds.generator(), steps_per_epoch=STEPS_PER_EPOCH,
+    model.fit_generator(ds.generator(BATCH_SIZE), steps_per_epoch=STEPS_PER_EPOCH,
                         epochs=NUM_EPOCHS,
                         verbose=1,
                         callbacks=[ON_EPOCH_END_CALLBACK],
@@ -301,8 +283,13 @@ def train_speller(from_file=None):
     iterative_train(model)
 
 
+def predict(model,word):
+    vec=vectorize(word)
+    pred=model.predict(np.array([vec]))
+    return devectorize(pred[0])
+
 if __name__ == '__main__':
     ON_EPOCH_END_CALLBACK = OnEpochEndCallback()
     indexer = spell_index()
-    ds = dataset()
-    train_speller('models/keras_spell_init.h5')
+    ds=dataset()
+    train_speller(INIT_MODEL_FILE_NAME)
