@@ -22,7 +22,7 @@ INITIALIZATION = "he_normal"
 HIDDEN_SIZE = 256
 
 BATCH_SIZE = 128
-NUM_EPOCHS = 1000
+NUM_EPOCHS = 30
 STEPS_PER_EPOCH = 100
 SAVED_MODEL_FILE_NAME="models/keras_spell_e{}.h5"
 INIT_MODEL_FILE_NAME="models/keras_spell_init.h5"
